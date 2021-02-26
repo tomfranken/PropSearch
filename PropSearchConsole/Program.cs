@@ -43,16 +43,27 @@ namespace PropSearch
             Console.WriteLine("Created Container: {0}\n", this.container.Id);
         }
 
+        private async Task ReplaceItemAsync(string ListingID, int Price)
+        {
+            ItemResponse<Property> LocalQueryResponse = await this.container.ReadItemAsync<Property>(ListingID, new PartitionKey(ListingID));
+            var itemBody = LocalQueryResponse.Resource; 
+            itemBody.Price = Price;
+            LocalQueryResponse = await this.container.ReplaceItemAsync<Property>(itemBody, itemBody.id, new PartitionKey(itemBody.id));
+            Console.WriteLine("Updated {0} to {1}\n", ListingID, Price);
+        }
         private async Task AddItemsToContainerAsync()
         {
-            dynamic responseJSON = JsonConvert.DeserializeObject(GetInfo("get" + ""));
+            Console.WriteLine("get or read");
+            string GetRead = Console.ReadLine();
+            dynamic responseJSON = JsonConvert.DeserializeObject(GetInfo(GetRead));
             double RTUs = 0;
+            List<string> ActivePropIDs = new List<string>();
             foreach (var property in responseJSON["properties"])
             {
                 double lotSize = ConvertSize((property["lot_size"]["units"]).ToString(), (property["lot_size"]["size"]).ToObject<double>());
                 string AddressLine = GetAddressLine((property["address"]["line"]).ToString());
                 //Console.WriteLine(property);
-                PropLine NewPropLine = new PropLine
+                Property CurrentProperty = new Property
                 {
                     id = property["listing_id"],
                     ListingID = property["listing_id"],
@@ -63,67 +74,86 @@ namespace PropSearch
                     LotSize = lotSize,
                     RDC_web_url = property["rdc_web_url"]
                 };
+
                 try
                 {
                     // Read the item to see if it exists.  
-                    ItemResponse<PropLine> PropLineResponse = await this.container.ReadItemAsync<PropLine>(NewPropLine.ListingID, new PartitionKey(NewPropLine.ListingID));
-                    if (PropLineResponse.Resource.Price == NewPropLine.Price)
+                    ItemResponse<Property> ExistingProperty = await this.container.ReadItemAsync<Property>(CurrentProperty.ListingID, new PartitionKey(CurrentProperty.ListingID));
+                    if (ExistingProperty.Resource.Price == CurrentProperty.Price)
                     {
                         Console.BackgroundColor = ConsoleColor.Black;
                     }
-                    else if (NewPropLine.Price > PropLineResponse.Resource.Price)
+                    else if (CurrentProperty.Price > ExistingProperty.Resource.Price)
                     {
                         Console.BackgroundColor = ConsoleColor.Red;
+                        await ReplaceItemAsync(CurrentProperty.ListingID, CurrentProperty.Price);
                     }
                     else
                     {
                         Console.BackgroundColor = ConsoleColor.Green;
+                        Console.WriteLine("{0},{1}\r", CurrentProperty.ListingID, CurrentProperty.Price);
+                        await ReplaceItemAsync(CurrentProperty.ListingID, CurrentProperty.Price);
                     }
-                    Console.WriteLine("Old item: {0},{1},{2},{3},{4},{5},{6}\r",
-                        PropLineResponse.Resource.ListingID,
-                        PropLineResponse.Resource.PropertyID,
-                        PropLineResponse.Resource.AddressLine,
-                        PropLineResponse.Resource.LotSize,
-                        PropLineResponse.Resource.PropType,
-                        PropLineResponse.Resource.Price,
-                        PropLineResponse.Resource.RDC_web_url);
-
-                    RTUs = RTUs + PropLineResponse.RequestCharge;
+                    Console.WriteLine("Old item~{0},{1},{2},{3},{4},{5},{6}\r",
+                        ExistingProperty.Resource.ListingID,
+                        ExistingProperty.Resource.PropertyID,
+                        ExistingProperty.Resource.AddressLine,
+                        ExistingProperty.Resource.LotSize,
+                        ExistingProperty.Resource.PropType,
+                        ExistingProperty.Resource.Price,
+                        ExistingProperty.Resource.RDC_web_url);
+                    ActivePropIDs.Add(CurrentProperty.id);
+                    RTUs = RTUs + ExistingProperty.RequestCharge;
                 }
                 catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                 {
                     // Create an item in the container representing the property record. Note we provide the value of the partition key for this item, which is "ListingID
-                    ItemResponse<PropLine> PropLineResponse = await this.container.CreateItemAsync<PropLine>(NewPropLine, new PartitionKey(NewPropLine.ListingID));
+                    ItemResponse<Property> NewProperty = await this.container.CreateItemAsync<Property>(CurrentProperty, new PartitionKey(CurrentProperty.ListingID));
 
                     // Note that after creating the item, we can access the body of the item with the Resource property off the ItemResponse. We can also access the RequestCharge property to see the amount of RUs consumed on this request.
                     Console.BackgroundColor = ConsoleColor.Black; 
-                    Console.WriteLine("New item: {0},{1},{2},{3},{4},{5},{6}\r",
-                        PropLineResponse.Resource.ListingID,
-                        PropLineResponse.Resource.PropertyID,
-                        PropLineResponse.Resource.AddressLine,
-                        PropLineResponse.Resource.LotSize,
-                        PropLineResponse.Resource.PropType,
-                        PropLineResponse.Resource.Price,
-                        PropLineResponse.Resource.RDC_web_url);
-                    RTUs = RTUs + PropLineResponse.RequestCharge;
+                    Console.WriteLine("New item~{0},{1},{2},{3},{4},{5},{6}\r",
+                        NewProperty.Resource.ListingID,
+                        NewProperty.Resource.PropertyID,
+                        NewProperty.Resource.AddressLine,
+                        NewProperty.Resource.LotSize,
+                        NewProperty.Resource.PropType,
+                        NewProperty.Resource.Price,
+                        NewProperty.Resource.RDC_web_url);
+                    ActivePropIDs.Add(NewProperty.Resource.id);
+                    RTUs = RTUs + NewProperty.RequestCharge;
                 }
             }
             Console.WriteLine("Total RTUs: {0}\n\r", RTUs);
             Console.ReadLine();
-        }
 
-        private async Task<List<ReportLine>> RunQuery(string sqlQueryText)
+            List<Property> AllLines = new List<Property>();
+            AllLines.AddRange(await RunQuery("SELECT p.ListingID, p.AddressLine FROM Properties p"));
+            foreach (Property line in AllLines)
+            {
+                if(!ActivePropIDs.Contains(line.ListingID)) 
+                {
+                    var partitionKeyValue = line.ListingID;
+                    ItemResponse<Property> DeleteProperty = await this.container.DeleteItemAsync<Property>(line.ListingID, new PartitionKey(partitionKeyValue));
+                    Console.WriteLine("Removed: {0},{1}\r",
+                      line.ListingID,
+                      line.AddressLine);
+                }
+            }
+            Console.WriteLine();
+        }
+        private async Task<List<Property>> RunQuery(string sqlQueryText)
         {
 
             QueryDefinition queryDefinition = new QueryDefinition(sqlQueryText);
-            FeedIterator<ReportLine> queryResultSetIterator = this.container.GetItemQueryIterator<ReportLine>(queryDefinition);
+            FeedIterator<Property> queryResultSetIterator = this.container.GetItemQueryIterator<Property>(queryDefinition);
 
-            List<ReportLine> Lines = new List<ReportLine>();
+            List<Property> Lines = new List<Property>();
 
             while (queryResultSetIterator.HasMoreResults)
             {
-                FeedResponse<ReportLine> currentResultSet = await queryResultSetIterator.ReadNextAsync();
-                foreach (ReportLine line in currentResultSet)
+                FeedResponse<Property> currentResultSet = await queryResultSetIterator.ReadNextAsync();
+                foreach (Property line in currentResultSet)
                 {
 
                     Lines.Add(line);
@@ -132,15 +162,16 @@ namespace PropSearch
             }
             return (Lines);
         }
-        private async Task QueryItemsAsync()
+        private async Task CreateReportsAsync()
         {
             
-            List<ReportLine> AllLines = new List<ReportLine>();
+            List<Property> AllLines = new List<Property>();
 
             AllLines.AddRange(await RunQuery("SELECT p.ListingID, p.AddressLine, p.Price, p.LotSize, p.RDC_web_url " +
                 "FROM Properties p " +
                 "WHERE p.AddressLine LIKE '%Spencer%' OR p.AddressLine LIKE '%Tayl%'"));
-            foreach (ReportLine line in AllLines)
+            Console.WriteLine("Properties on Spencer or Tayloes Neck:");
+            foreach (Property line in AllLines)
             {
                 Console.WriteLine("{0},{1},{2},{3},{4}\r",
                           line.ListingID,
@@ -150,13 +181,13 @@ namespace PropSearch
                           line.RDC_web_url);
             }
             Console.WriteLine();
-            Console.WriteLine("Press the any key to continue.");
 
-            List<ReportLine> AllLines1 = new List<ReportLine>();
+            List<Property> AllLines1 = new List<Property>();
             AllLines1.AddRange(await RunQuery("SELECT p.ListingID, p.AddressLine, p.Price, p.LotSize, p.RDC_web_url " +
                 "FROM Properties p " +  
                 "WHERE p.LotSize >= 5 ORDER BY p.LotSize ASC"));
-            foreach (ReportLine line in AllLines1)
+            Console.WriteLine("Properties 5+ Acres:");
+            foreach (Property line in AllLines1)
             {
                 Console.WriteLine("{0},{1},{2},{3},{4}\r",
                           line.ListingID,
@@ -221,9 +252,9 @@ namespace PropSearch
             //await this.CreateDatabaseAsync();
             //await this.CreateContainerAsync();
             await this.AddItemsToContainerAsync();
-            await this.QueryItemsAsync();
+            await this.CreateReportsAsync();
             //await this.ReplaceFamilyItemAsync();
-            //await this.DeleteFamilyItemAsync();
+            //await this.DeleteItemAsync();
             Console.Read();
         }
 

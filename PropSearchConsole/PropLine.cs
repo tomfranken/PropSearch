@@ -2,7 +2,7 @@
 
 namespace PropSearch
 {
-    public class PropLine
+    public class Property
     {
         [JsonProperty(PropertyName = "id")]
         public string id { get; set; }
