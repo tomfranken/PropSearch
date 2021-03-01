@@ -9,6 +9,7 @@ namespace PropSearch
         public string ListingID { get; set; }
         public string PropertyID { get; set; }
         public string AddressLine { get; set; }
+        public string City { get; set; }
         public string PropType { get; set; }
         public int Price { get; set; }
         public double LotSize { get; set; }

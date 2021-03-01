@@ -1,20 +1,25 @@
 ﻿using System;
+//#r "C:\Users\Tom\.nuget\packages\unirest-api\1.0.7.6\lib\unirest-net.dll"
 using unirest_net.http;
+//#r "C:\Users\Tom\.nuget\packages\newtonsoft.json\7.0.1\lib\net45\Newtonsoft.Json.dll"
 using Newtonsoft.Json;
 using System.Threading.Tasks;
 using System.Configuration;
 using System.Collections.Generic;
+//#r "C:\Windows\Microsoft.NET\assembly\GAC_MSIL\System.Net\v4.0_4.0.0.0__b03f5f7f11d50a3a\System.Net.dll"
 using System.Net;
+using System.Net.Mail;
 using Microsoft.Azure.Cosmos;
 //using PropSearchConsole;
+
 
 namespace PropSearch
 {
     class Program
     { 
-        private static readonly string EndpointUri = "https://tomtestsosmoetc.documents.azure.com:443/";
+        private static readonly string EndpointUri = "https://tompropertysearch.documents.azure.com:443/";
         // The primary key for the Azure Cosmos account.
-        private static readonly string PrimaryKey = "3KyGXoLt0HmtGMSYXuKXrfIxGY7cCgmLk9nyou4s4gI7XYmdcJwjn0GXxy2gXlcXRNTXOYCach5BEbPELhV9hA==";
+        private static readonly string PrimaryKey = "c2YjoF0czmLgwFHbkPr7oS2J4j0nX8CxISiQgXLu5Zv0h3X3HVxIu9HtlCEKkGFPQSsFNMFhjRNNMEfWwZ3TPg==";
 
         // The Cosmos client instance
         private CosmosClient cosmosClient;
@@ -43,36 +48,112 @@ namespace PropSearch
             Console.WriteLine("Created Container: {0}\n", this.container.Id);
         }
 
-        private async Task ReplaceItemAsync(string ListingID, int Price)
+        private async Task UpdatePriceAsync(string ListingID, int Price)
         {
             ItemResponse<Property> LocalQueryResponse = await this.container.ReadItemAsync<Property>(ListingID, new PartitionKey(ListingID));
-            var itemBody = LocalQueryResponse.Resource; 
+            var itemBody = LocalQueryResponse.Resource;
+            int oldprice = itemBody.Price;
             itemBody.Price = Price;
             LocalQueryResponse = await this.container.ReplaceItemAsync<Property>(itemBody, itemBody.id, new PartitionKey(itemBody.id));
-            Console.WriteLine("Updated {0} to {1}\n", ListingID, Price);
+            Console.WriteLine("Updated {0} from {1} to {2}\n", ListingID, oldprice, Price);
         }
+
+        private async Task UpdatecityAsync(string ListingID, string City)
+        {
+            Console.WriteLine(ListingID); 
+            ItemResponse<Property> LocalQueryResponse = await this.container.ReadItemAsync<Property>(ListingID, new PartitionKey(ListingID));
+            var itemBody = LocalQueryResponse.Resource;
+            itemBody.City = City;
+            LocalQueryResponse = await this.container.ReplaceItemAsync<Property>(itemBody, itemBody.id, new PartitionKey(itemBody.id));
+            Console.WriteLine("Updated {0} to {1}\n", ListingID, City); 
+        }
+
+        private async Task UpdateCityAsync()
+        {
+            string GetRead = "read";
+            dynamic responseJSON2 = JsonConvert.DeserializeObject(GetInfo(GetRead));
+            foreach (var property in responseJSON2)
+            {
+                string ListingID = property["listing_id"];
+                string City = "No City";
+                try { City = (property["address"]["city"]).ToString(); }
+                catch { City = "No City"; }
+                await UpdatecityAsync(ListingID, City);
+            }
+        }
+
+        public static string GetInfo(string getread)
+        {
+            string response = "";
+            if (getread == "get")
+            {
+                string cities = "Nanjemoy,Welcome,Port Tobacco,Marbury,Holly Haven";
+                string[] citiesArray = cities.Split(',');
+                foreach (var city in citiesArray)
+                {
+                    var uristring = "https://realtor.p.rapidapi.com/properties/v2/list-for-sale?city=" + city + "&limit=200&offset=0&state_code=MD";
+                    HttpResponse<string> info = Unirest.get(uristring)
+                    .header("X-RapidAPI-Host", "realtor.p.rapidapi.com")
+                    .header("X-RapidAPI-Key", "37e55441e9msh666c920aa1b90a1p1ea11cjsn7020db0de8f5")
+                    .header("Accept", "application/json")
+                    .asJson<string>();
+                    dynamic responseJSON = JsonConvert.DeserializeObject(info.Body);
+                    if (responseJSON["meta"]["returned_rows"] > 0)
+                    {
+                        responseJSON = responseJSON["properties"];
+                        response = response + JsonConvert.SerializeObject(responseJSON);
+                    }
+                }
+                System.IO.File.WriteAllText(@"E:\DataStore\PropSearchConsole\responseText.txt", response.Replace("][", ","));
+            }
+            else if (getread == "read")
+            {
+                response = System.IO.File.ReadAllText(@"E:\DataStore\PropSearchConsole\responseText.txt");
+            }
+            return response;
+        }
+
         private async Task AddItemsToContainerAsync()
         {
             Console.WriteLine("get or read");
             string GetRead = Console.ReadLine();
-            dynamic responseJSON = JsonConvert.DeserializeObject(GetInfo(GetRead));
+            //string GetRead = "get";
+            dynamic responseJSON2 = JsonConvert.DeserializeObject(GetInfo(GetRead));
             double RTUs = 0;
             List<string> ActivePropIDs = new List<string>();
-            foreach (var property in responseJSON["properties"])
+            foreach (var property in responseJSON2)
             {
-                double lotSize = ConvertSize((property["lot_size"]["units"]).ToString(), (property["lot_size"]["size"]).ToObject<double>());
-                string AddressLine = GetAddressLine((property["address"]["line"]).ToString());
+                string AddressLine = "No Address Line";
+                string proptype = "No Property Type";
+                string rdc_web_url = "No RDC Web URL";
+                string city = "No City";
+                double lotSize = 0;
+                int price = 0;
+                try   { lotSize = ConvertSize((property["lot_size"]["units"]).ToString(), (property["lot_size"]["size"]).ToObject<double>()); }
+                catch { lotSize = 0; }
+                try   { price = (property["price"].ToObject<int>()); }
+                catch { price = 0; }
+                try   { AddressLine = (property["address"]["line"]).ToString(); }
+                catch { AddressLine = "No Address Line";  }
+                try   { city = GetAddressLine((property["address"]["city"]).ToString()); }
+                catch { city = "No City"; }
+                try   { proptype = property["prop_type"]; }                
+                catch { proptype = "No Property Type"; }
+                try   { rdc_web_url = property["rdc_web_url"]; }
+                catch { rdc_web_url = "No RDC Web URL"; }
+
                 //Console.WriteLine(property);
                 Property CurrentProperty = new Property
                 {
                     id = property["listing_id"],
                     ListingID = property["listing_id"],
                     PropertyID = property["property_id"],
+                    City = city,
                     AddressLine = AddressLine,
-                    PropType = property["prop_type"],
-                    Price = (property["price"].ToObject<int>()),
+                    PropType = proptype,
+                    Price = price,
                     LotSize = lotSize,
-                    RDC_web_url = property["rdc_web_url"]
+                    RDC_web_url = rdc_web_url
                 };
 
                 try
@@ -86,17 +167,18 @@ namespace PropSearch
                     else if (CurrentProperty.Price > ExistingProperty.Resource.Price)
                     {
                         Console.BackgroundColor = ConsoleColor.Red;
-                        await ReplaceItemAsync(CurrentProperty.ListingID, CurrentProperty.Price);
+                        await UpdatePriceAsync(CurrentProperty.ListingID, CurrentProperty.Price);
                     }
                     else
                     {
                         Console.BackgroundColor = ConsoleColor.Green;
-                        Console.WriteLine("{0},{1}\r", CurrentProperty.ListingID, CurrentProperty.Price);
-                        await ReplaceItemAsync(CurrentProperty.ListingID, CurrentProperty.Price);
+                        //Console.WriteLine("{0},{1}\r", CurrentProperty.ListingID, CurrentProperty.Price);
+                        await UpdatePriceAsync(CurrentProperty.ListingID, CurrentProperty.Price);
                     }
-                    Console.WriteLine("Old item~{0},{1},{2},{3},{4},{5},{6}\r",
+                    Console.WriteLine("Old item~{0},{1},{2},{3},{4},{5},{6},{7}\r",
                         ExistingProperty.Resource.ListingID,
                         ExistingProperty.Resource.PropertyID,
+                        ExistingProperty.Resource.City,
                         ExistingProperty.Resource.AddressLine,
                         ExistingProperty.Resource.LotSize,
                         ExistingProperty.Resource.PropType,
@@ -112,9 +194,10 @@ namespace PropSearch
 
                     // Note that after creating the item, we can access the body of the item with the Resource property off the ItemResponse. We can also access the RequestCharge property to see the amount of RUs consumed on this request.
                     Console.BackgroundColor = ConsoleColor.Black; 
-                    Console.WriteLine("New item~{0},{1},{2},{3},{4},{5},{6}\r",
+                    Console.WriteLine("New item~{0},{1},{2},{3},{4},{5},{6},{7}\r",
                         NewProperty.Resource.ListingID,
                         NewProperty.Resource.PropertyID,
+                        NewProperty.Resource.City,
                         NewProperty.Resource.AddressLine,
                         NewProperty.Resource.LotSize,
                         NewProperty.Resource.PropType,
@@ -127,6 +210,8 @@ namespace PropSearch
             Console.WriteLine("Total RTUs: {0}\n\r", RTUs);
             Console.ReadLine();
 
+
+            //Delete old properties
             List<Property> AllLines = new List<Property>();
             AllLines.AddRange(await RunQuery("SELECT p.ListingID, p.AddressLine FROM Properties p"));
             foreach (Property line in AllLines)
@@ -166,57 +251,51 @@ namespace PropSearch
         {
             
             List<Property> AllLines = new List<Property>();
+            string body = "";
 
-            AllLines.AddRange(await RunQuery("SELECT p.ListingID, p.AddressLine, p.Price, p.LotSize, p.RDC_web_url " +
+            AllLines.AddRange(await RunQuery("SELECT p.ListingID, p.AddressLine, p.City, p.Price, p.LotSize, p.RDC_web_url " +
                 "FROM Properties p " +
                 "WHERE p.AddressLine LIKE '%Spencer%' OR p.AddressLine LIKE '%Tayl%'"));
             Console.WriteLine("Properties on Spencer or Tayloes Neck:");
+            body = body + "<p>Properties on Spencer or Tayloes Neck:<br>";
             foreach (Property line in AllLines)
             {
-                Console.WriteLine("{0},{1},{2},{3},{4}\r",
-                          line.ListingID,
-                          line.AddressLine,
-                          line.LotSize,
-                          line.Price,
-                          line.RDC_web_url);
+                string reportline = 
+                    line.ListingID + "," +
+                    line.City + "," +
+                    line.AddressLine + "," +
+                    line.LotSize + "," +
+                    line.Price + "," +
+                    line.RDC_web_url + "</br>";
+                Console.WriteLine("{0}\r", reportline);
+                body = body + reportline;
             }
+            body = body + "</p>";
             Console.WriteLine();
+            
 
             List<Property> AllLines1 = new List<Property>();
-            AllLines1.AddRange(await RunQuery("SELECT p.ListingID, p.AddressLine, p.Price, p.LotSize, p.RDC_web_url " +
+            AllLines1.AddRange(await RunQuery("SELECT p.ListingID, p.AddressLine, p.City, p.Price, p.LotSize, p.RDC_web_url " +
                 "FROM Properties p " +  
                 "WHERE p.LotSize >= 5 ORDER BY p.LotSize ASC"));
+            body = body + "Properties 5+ Acres:</br>";
             Console.WriteLine("Properties 5+ Acres:");
             foreach (Property line in AllLines1)
             {
-                Console.WriteLine("{0},{1},{2},{3},{4}\r",
-                          line.ListingID,
-                          line.AddressLine,
-                          line.LotSize,
-                          line.Price,
-                          line.RDC_web_url);
+                string reportline =
+                    line.ListingID + "," +
+                    line.City + "," +
+                    line.AddressLine + "," +
+                    line.LotSize + "," +
+                    line.Price + "," +
+                    line.RDC_web_url + "</br>";
+                Console.WriteLine("{0}\r", reportline);
+                body = body + reportline;
             }
+            body = body + "</p>";
+            await SendMessage(body);
         }
 
-        public static string GetInfo (string getread)
-        {
-            string response = "";
-            if (getread == "get")
-            {
-                HttpResponse<string> info = Unirest.get("https://realtor.p.rapidapi.com/properties/v2/list-for-sale?city=Nanjemoy&limit=200&offset=0&state_code=MD")
-                .header("X-RapidAPI-Host", "realtor.p.rapidapi.com")
-                .header("X-RapidAPI-Key", "37e55441e9msh666c920aa1b90a1p1ea11cjsn7020db0de8f5")
-                .header("Accept", "application/json")
-                .asJson<string>();
-                response = info.Body;
-                System.IO.File.WriteAllText(@"E:\DataStore\PropSearchConsole\responseText.txt", response);
-            }
-            else if (getread == "read")
-            {
-                response = System.IO.File.ReadAllText(@"E:\DataStore\PropSearchConsole\responseText.txt");
-            }
-            return response;
-        }
 
         public static double ConvertSize(string units, double size)
         {
@@ -245,15 +324,41 @@ namespace PropSearch
             }
         }
 
+        private async Task SendMessage(string body)
+        {
+            MailMessage msg = new MailMessage();
+            msg.To.Add(new MailAddress("tom@tomfranken.com", "Tom Franken"));
+            msg.From = new MailAddress("tom@tomfranken.com", "Tom Franken");
+            msg.Subject = "Land Report";
+            msg.Body = body;
+            msg.IsBodyHtml = true;
+            SmtpClient client = new SmtpClient();
+            client.UseDefaultCredentials = false;
+            client.Credentials = new System.Net.NetworkCredential("tom@tomfranken.com", "tlcmdpzsbctkrnpv");//#insert your credentials
+			client.Port = 587;
+            client.Host = "smtp.office365.com";
+            client.DeliveryMethod = SmtpDeliveryMethod.Network;
+            client.EnableSsl = true;
+            try
+            {
+                client.Send(msg);
+                Console.WriteLine("Email Successfully Sent");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+            }
+        }
+
         public async Task ProcessInfo()
         {
             this.cosmosClient = new CosmosClient(EndpointUri, PrimaryKey);
             this.container = this.cosmosClient.GetContainer(databaseId, containerId);
             //await this.CreateDatabaseAsync();
             //await this.CreateContainerAsync();
-            await this.AddItemsToContainerAsync();
+            //await this.AddItemsToContainerAsync();
+            //await this.UpdateCityAsync();
             await this.CreateReportsAsync();
-            //await this.ReplaceFamilyItemAsync();
             //await this.DeleteItemAsync();
             Console.Read();
         }
