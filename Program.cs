@@ -334,7 +334,8 @@ namespace PropSearch
             msg.IsBodyHtml = true;
             SmtpClient client = new SmtpClient();
             client.UseDefaultCredentials = false;
-            client.Credentials = new System.Net.NetworkCredential("tom@tomfranken.com", "tlcmdpzsbctkrnpv");//#insert your credentials
+            string apppwd = System.IO.File.ReadAllText(@"E:\DataStore\PropSearchConsole\apppwd.txt");
+            client.Credentials = new System.Net.NetworkCredential("tom@tomfranken.com", apppwd);//#insert your credentials
 			client.Port = 587;
             client.Host = "smtp.office365.com";
             client.DeliveryMethod = SmtpDeliveryMethod.Network;
