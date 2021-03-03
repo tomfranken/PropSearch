@@ -17,9 +17,9 @@ namespace PropSearch
 {
     class Program
     { 
-        private static readonly string EndpointUri = "https://tompropertysearch.documents.azure.com:443/";
+        private static readonly string EndpointUri = readit;
         // The primary key for the Azure Cosmos account.
-        private static readonly string PrimaryKey = "c2YjoF0czmLgwFHbkPr7oS2J4j0nX8CxISiQgXLu5Zv0h3X3HVxIu9HtlCEKkGFPQSsFNMFhjRNNMEfWwZ3TPg==";
+        private static readonly string PrimaryKey = readit;
 
         // The Cosmos client instance
         private CosmosClient cosmosClient;
@@ -91,6 +91,7 @@ namespace PropSearch
                 string[] citiesArray = cities.Split(',');
                 foreach (var city in citiesArray)
                 {
+                    Console.WriteLine("Getting {0}\r",city);
                     var uristring = "https://realtor.p.rapidapi.com/properties/v2/list-for-sale?city=" + city + "&limit=200&offset=0&state_code=MD";
                     HttpResponse<string> info = Unirest.get(uristring)
                     .header("X-RapidAPI-Host", "realtor.p.rapidapi.com")
@@ -104,7 +105,8 @@ namespace PropSearch
                         response = response + JsonConvert.SerializeObject(responseJSON);
                     }
                 }
-                System.IO.File.WriteAllText(@"E:\DataStore\PropSearchConsole\responseText.txt", response.Replace("][", ","));
+                response = response.Replace("][", ",");
+                System.IO.File.WriteAllText(@"E:\DataStore\PropSearchConsole\responseText.txt", response);
             }
             else if (getread == "read")
             {
@@ -357,7 +359,7 @@ namespace PropSearch
             this.container = this.cosmosClient.GetContainer(databaseId, containerId);
             //await this.CreateDatabaseAsync();
             //await this.CreateContainerAsync();
-            //await this.AddItemsToContainerAsync();
+            await this.AddItemsToContainerAsync();
             //await this.UpdateCityAsync();
             await this.CreateReportsAsync();
             //await this.DeleteItemAsync();
@@ -367,6 +369,7 @@ namespace PropSearch
         public static async Task Main(string[] args)
         {
             Program p = new Program();
+            
             await p.ProcessInfo();
         }
     }

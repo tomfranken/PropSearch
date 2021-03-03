@@ -41,3 +41,4 @@ C:\Users\Tom\Documents\GitHub\PropSearchConsole\obj\Debug\net5.0\PropSearchConso
 C:\Users\Tom\Documents\GitHub\PropSearchConsole\obj\Debug\net5.0\ref\PropSearchConsole.dll
 C:\Users\Tom\Documents\GitHub\PropSearchConsole\obj\Debug\net5.0\PropSearchConsole.pdb
 C:\Users\Tom\Documents\GitHub\PropSearchConsole\obj\Debug\net5.0\PropSearchConsole.genruntimeconfig.cache
+C:\Users\Tom\Documents\GitHub\PropSearchConsole\bin\Debug\net5.0\Settings.job
