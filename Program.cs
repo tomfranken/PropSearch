@@ -3,6 +3,7 @@
 using unirest_net.http;
 //#r "C:\Users\Tom\.nuget\packages\newtonsoft.json\7.0.1\lib\net45\Newtonsoft.Json.dll"
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System.Threading.Tasks;
 using System.Configuration;
 using System.Collections.Generic;
@@ -16,11 +17,8 @@ using Microsoft.Azure.Cosmos;
 namespace PropSearch
 {
     class Program
-    { 
-        private static readonly string EndpointUri = readit;
-        // The primary key for the Azure Cosmos account.
-        private static readonly string PrimaryKey = readit;
-
+    {
+        JObject parameters = JObject.Parse(System.IO.File.ReadAllText(@"E:\DataStore\PropSearchConsole\parameters.txt"));
         // The Cosmos client instance
         private CosmosClient cosmosClient;
 
@@ -336,7 +334,7 @@ namespace PropSearch
             msg.IsBodyHtml = true;
             SmtpClient client = new SmtpClient();
             client.UseDefaultCredentials = false;
-            string apppwd = System.IO.File.ReadAllText(@"E:\DataStore\PropSearchConsole\apppwd.txt");
+            string apppwd = (string)parameters["apppwd"];
             client.Credentials = new System.Net.NetworkCredential("tom@tomfranken.com", apppwd);//#insert your credentials
 			client.Port = 587;
             client.Host = "smtp.office365.com";
@@ -353,8 +351,11 @@ namespace PropSearch
             }
         }
 
+
         public async Task ProcessInfo()
         {
+            string EndpointUri = (string)parameters["EndpointUri"];
+            string PrimaryKey = (string)parameters["PrimaryKey"];
             this.cosmosClient = new CosmosClient(EndpointUri, PrimaryKey);
             this.container = this.cosmosClient.GetContainer(databaseId, containerId);
             //await this.CreateDatabaseAsync();
