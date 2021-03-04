@@ -29,8 +29,7 @@ namespace PropSearch
         private Container container;
 
         // The name of the database and container we will create
-        private string databaseId = "Props";
-        private string containerId = "Properties";
+
 
         private async Task CreateDatabaseAsync()
         {
@@ -356,6 +355,8 @@ namespace PropSearch
         {
             string EndpointUri = (string)parameters["EndpointUri"];
             string PrimaryKey = (string)parameters["PrimaryKey"];
+            string databaseId = (string)parameters["Props"];
+            string containerId = (string)parameters["Properties"];
             this.cosmosClient = new CosmosClient(EndpointUri, PrimaryKey);
             this.container = this.cosmosClient.GetContainer(databaseId, containerId);
             //await this.CreateDatabaseAsync();
