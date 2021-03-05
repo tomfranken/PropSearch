@@ -34,14 +34,14 @@ namespace PropSearch
         private async Task CreateDatabaseAsync()
         {
             // Create a new database
-            this.database = await this.cosmosClient.CreateDatabaseIfNotExistsAsync(databaseId);
+            this.database = await this.cosmosClient.CreateDatabaseIfNotExistsAsync((string)parameters["databaseId"]);
             Console.WriteLine("Created Database: {0}\n", this.database.Id);
         }
 
         private async Task CreateContainerAsync()
         {
             // Create a new container
-            this.container = await this.database.CreateContainerIfNotExistsAsync(containerId, "/ListingID");
+            this.container = await this.database.CreateContainerIfNotExistsAsync((string)parameters["containerId"], "/ListingID");
             Console.WriteLine("Created Container: {0}\n", this.container.Id);
         }
 
@@ -353,12 +353,8 @@ namespace PropSearch
 
         public async Task ProcessInfo()
         {
-            string EndpointUri = (string)parameters["EndpointUri"];
-            string PrimaryKey = (string)parameters["PrimaryKey"];
-            string databaseId = (string)parameters["Props"];
-            string containerId = (string)parameters["Properties"];
-            this.cosmosClient = new CosmosClient(EndpointUri, PrimaryKey);
-            this.container = this.cosmosClient.GetContainer(databaseId, containerId);
+            this.cosmosClient = new CosmosClient((string)parameters["EndpointUri"], (string)parameters["PrimaryKey"]);
+            this.container = this.cosmosClient.GetContainer((string)parameters["databaseId"], (string)parameters["containerId"]);
             //await this.CreateDatabaseAsync();
             //await this.CreateContainerAsync();
             await this.AddItemsToContainerAsync();
