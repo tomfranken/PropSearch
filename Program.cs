@@ -9,6 +9,7 @@ using System.Configuration;
 using System.Collections.Generic;
 //#r "C:\Windows\Microsoft.NET\assembly\GAC_MSIL\System.Net\v4.0_4.0.0.0__b03f5f7f11d50a3a\System.Net.dll"
 using System.Net;
+using System.Net.Http;
 using System.Net.Mail;
 using Microsoft.Azure.Cosmos;
 //using PropSearchConsole;
@@ -68,7 +69,7 @@ namespace PropSearch
         private async Task UpdateCityAsync()
         {
             string GetRead = "read";
-            dynamic responseJSON2 = JsonConvert.DeserializeObject(GetInfo(GetRead));
+            dynamic responseJSON2 = JsonConvert.DeserializeObject(GetInfoAsync(GetRead).Result);
             foreach (var property in responseJSON2)
             {
                 string ListingID = property["listing_id"];
@@ -79,7 +80,7 @@ namespace PropSearch
             }
         }
 
-        public static string GetInfo(string getread)
+        public static async Task<string> GetInfoAsync(string getread)
         {
             string response = "";
             if (getread == "get")
@@ -89,13 +90,20 @@ namespace PropSearch
                 foreach (var city in citiesArray)
                 {
                     Console.WriteLine("Getting {0}\r",city);
-                    var uristring = "https://realtor.p.rapidapi.com/properties/v2/list-for-sale?city=" + city + "&limit=200&offset=0&state_code=MD";
-                    HttpResponse<string> info = Unirest.get(uristring)
-                    .header("X-RapidAPI-Host", "realtor.p.rapidapi.com")
-                    .header("X-RapidAPI-Key", "37e55441e9msh666c920aa1b90a1p1ea11cjsn7020db0de8f5")
-                    .header("Accept", "application/json")
-                    .asJson<string>();
-                    dynamic responseJSON = JsonConvert.DeserializeObject(info.Body);
+                    var client = new HttpClient();
+                    var request = new HttpRequestMessage
+                    {
+                        Method = HttpMethod.Get,
+                        RequestUri = new Uri("https://realtor.p.rapidapi.com/properties/v2/list-for-sale?city=" + city + "&limit=200&offset=0&state_code=MD"),
+                        Headers =
+                        {
+                            { "X-RapidAPI-Host", "realtor.p.rapidapi.com" },
+                            { "X-RapidAPI-Key", "37e55441e9msh666c920aa1b90a1p1ea11cjsn7020db0de8f5"},
+                        },
+                    };
+                    var info = await client.SendAsync(request);
+                    dynamic responseJSON = JsonConvert.DeserializeObject(await info.Content.ReadAsStringAsync());
+
                     if (responseJSON["meta"]["returned_rows"] > 0)
                     {
                         responseJSON = responseJSON["properties"];
@@ -117,7 +125,7 @@ namespace PropSearch
             Console.WriteLine("get or read");
             string GetRead = Console.ReadLine();
             //string GetRead = "get";
-            dynamic responseJSON2 = JsonConvert.DeserializeObject(GetInfo(GetRead));
+            dynamic responseJSON2 = JsonConvert.DeserializeObject(GetInfoAsync(GetRead).Result);
             double RTUs = 0;
             List<string> ActivePropIDs = new List<string>();
             foreach (var property in responseJSON2)
