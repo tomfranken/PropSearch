@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-
 //#r "C:\Users\Tom\.nuget\packages\unirest-api\1.0.7.6\lib\unirest-net.dll"
 using unirest_net.http;
 //#r "C:\Users\Tom\.nuget\packages\newtonsoft.json\7.0.1\lib\net45\Newtonsoft.Json.dll"
@@ -377,9 +376,15 @@ namespace PropSearch
 
         public async Task ProcessInfo()
         {
-            this.cosmosClient = new CosmosClient((string)parameters["EndpointUri"], (string)parameters["PrimaryKey"]);
+            /*this.cosmosClient = new CosmosClient((string)parameters["EndpointUri"], (string)parameters["PrimaryKey"]);
             this.cosmosContainer = this.cosmosClient.GetContainer((string)parameters["databaseId"], (string)parameters["cosmosContainerId"]);
             this.blobClient = new BlobClient((string)parameters["blobConnectionString"], (string)parameters["blobContainerName"], (string)parameters["blobName"]);
+            */
+            this.cosmosClient = new CosmosClient(Environment.GetEnvironmentVariable("EndpointUri"), Environment.GetEnvironmentVariable("PrimaryKey"));
+            this.cosmosContainer = this.cosmosClient.GetContainer(Environment.GetEnvironmentVariable("databaseId"), Environment.GetEnvironmentVariable("cosmosContainerId"));
+            this.blobClient = new BlobClient(Environment.GetEnvironmentVariable("blobConnectionString"), Environment.GetEnvironmentVariable("blobContainerName"), Environment.GetEnvironmentVariable("blobName"));
+            
+
             Console.WriteLine("Set clients");
             //await this.CreateDatabaseAsync();
             //await this.CreateContainerAsync();
