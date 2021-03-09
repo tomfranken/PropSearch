@@ -1,4 +1,6 @@
 ﻿using System;
+using System.IO;
+
 //#r "C:\Users\Tom\.nuget\packages\unirest-api\1.0.7.6\lib\unirest-net.dll"
 using unirest_net.http;
 //#r "C:\Users\Tom\.nuget\packages\newtonsoft.json\7.0.1\lib\net45\Newtonsoft.Json.dll"
@@ -11,8 +13,11 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.Mail;
+using System.Text;
 using Microsoft.Azure.Cosmos;
+using Azure.Storage.Blobs;
 //using PropSearchConsole;
+using System.Collections;
 
 
 namespace PropSearch
@@ -20,17 +25,19 @@ namespace PropSearch
     class Program
     {
         JObject parameters = JObject.Parse(System.IO.File.ReadAllText(@"E:\DataStore\PropSearchConsole\parameters.txt"));
+
         // The Cosmos client instance
         private CosmosClient cosmosClient;
+
+        // Create a BlobServiceClient object which will be used to create a container client
+        private BlobClient blobClient;
+
 
         // The database we will create
         private Database database;
 
         // The container we will create.
-        private Container container;
-
-        // The name of the database and container we will create
-
+        private Container cosmosContainer;
 
         private async Task CreateDatabaseAsync()
         {
@@ -42,34 +49,34 @@ namespace PropSearch
         private async Task CreateContainerAsync()
         {
             // Create a new container
-            this.container = await this.database.CreateContainerIfNotExistsAsync((string)parameters["containerId"], "/ListingID");
-            Console.WriteLine("Created Container: {0}\n", this.container.Id);
+            this.cosmosContainer = await this.database.CreateContainerIfNotExistsAsync((string)parameters["containerId"], "/ListingID");
+            Console.WriteLine("Created Container: {0}\n", this.cosmosContainer.Id);
         }
 
         private async Task UpdatePriceAsync(string ListingID, int Price)
         {
-            ItemResponse<Property> LocalQueryResponse = await this.container.ReadItemAsync<Property>(ListingID, new PartitionKey(ListingID));
+            ItemResponse<Property> LocalQueryResponse = await this.cosmosContainer.ReadItemAsync<Property>(ListingID, new PartitionKey(ListingID));
             var itemBody = LocalQueryResponse.Resource;
             int oldprice = itemBody.Price;
             itemBody.Price = Price;
-            LocalQueryResponse = await this.container.ReplaceItemAsync<Property>(itemBody, itemBody.id, new PartitionKey(itemBody.id));
+            LocalQueryResponse = await this.cosmosContainer.ReplaceItemAsync<Property>(itemBody, itemBody.id, new PartitionKey(itemBody.id));
             Console.WriteLine("Updated {0} from {1} to {2}\n", ListingID, oldprice, Price);
         }
 
         private async Task UpdatecityAsync(string ListingID, string City)
         {
             Console.WriteLine(ListingID); 
-            ItemResponse<Property> LocalQueryResponse = await this.container.ReadItemAsync<Property>(ListingID, new PartitionKey(ListingID));
+            ItemResponse<Property> LocalQueryResponse = await this.cosmosContainer.ReadItemAsync<Property>(ListingID, new PartitionKey(ListingID));
             var itemBody = LocalQueryResponse.Resource;
             itemBody.City = City;
-            LocalQueryResponse = await this.container.ReplaceItemAsync<Property>(itemBody, itemBody.id, new PartitionKey(itemBody.id));
+            LocalQueryResponse = await this.cosmosContainer.ReplaceItemAsync<Property>(itemBody, itemBody.id, new PartitionKey(itemBody.id));
             Console.WriteLine("Updated {0} to {1}\n", ListingID, City); 
         }
 
-        private async Task UpdateCityAsync()
+        private async Task UpdateCityAsync(BlobClient blobClient)
         {
             string GetRead = "read";
-            dynamic responseJSON2 = JsonConvert.DeserializeObject(GetInfoAsync(GetRead).Result);
+            dynamic responseJSON2 = JsonConvert.DeserializeObject(GetInfoAsync(GetRead, blobClient).Result);
             foreach (var property in responseJSON2)
             {
                 string ListingID = property["listing_id"];
@@ -80,7 +87,7 @@ namespace PropSearch
             }
         }
 
-        public static async Task<string> GetInfoAsync(string getread)
+        private static async Task<string> GetInfoAsync(string getread, BlobClient blobClient)
         {
             string response = "";
             if (getread == "get")
@@ -111,21 +118,30 @@ namespace PropSearch
                     }
                 }
                 response = response.Replace("][", ",");
-                System.IO.File.WriteAllText(@"E:\DataStore\PropSearchConsole\responseText.txt", response);
+                blobClient.Delete();
+                var content = Encoding.UTF8.GetBytes(response);
+                using (var ms = new MemoryStream(content))
+                    blobClient.Upload(ms);
+                //System.IO.File.WriteAllText(@"E:\DataStore\PropSearchConsole\currentProps.txt", response);
             }
             else if (getread == "read")
             {
-                response = System.IO.File.ReadAllText(@"E:\DataStore\PropSearchConsole\responseText.txt");
+                var download = await blobClient.DownloadAsync();
+                using (var streamReader = new StreamReader(download.Value.Content))
+                {
+                    response = await streamReader.ReadLineAsync();
+                }
+                //response = System.IO.File.ReadAllText(@"E:\DataStore\PropSearchConsole\currentProps.txt");
             }
             return response;
         }
 
-        private async Task AddItemsToContainerAsync()
+        private async Task AddItemsToContainerAsync(BlobClient blobClient)
         {
             Console.WriteLine("get or read");
             string GetRead = Console.ReadLine();
             //string GetRead = "get";
-            dynamic responseJSON2 = JsonConvert.DeserializeObject(GetInfoAsync(GetRead).Result);
+            dynamic responseJSON2 = JsonConvert.DeserializeObject(GetInfoAsync(GetRead, blobClient).Result);
             double RTUs = 0;
             List<string> ActivePropIDs = new List<string>();
             foreach (var property in responseJSON2)
@@ -166,7 +182,7 @@ namespace PropSearch
                 try
                 {
                     // Read the item to see if it exists.  
-                    ItemResponse<Property> ExistingProperty = await this.container.ReadItemAsync<Property>(CurrentProperty.ListingID, new PartitionKey(CurrentProperty.ListingID));
+                    ItemResponse<Property> ExistingProperty = await this.cosmosContainer.ReadItemAsync<Property>(CurrentProperty.ListingID, new PartitionKey(CurrentProperty.ListingID));
                     if (ExistingProperty.Resource.Price == CurrentProperty.Price)
                     {
                         Console.BackgroundColor = ConsoleColor.Black;
@@ -197,7 +213,7 @@ namespace PropSearch
                 catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                 {
                     // Create an item in the container representing the property record. Note we provide the value of the partition key for this item, which is "ListingID
-                    ItemResponse<Property> NewProperty = await this.container.CreateItemAsync<Property>(CurrentProperty, new PartitionKey(CurrentProperty.ListingID));
+                    ItemResponse<Property> NewProperty = await this.cosmosContainer.CreateItemAsync<Property>(CurrentProperty, new PartitionKey(CurrentProperty.ListingID));
 
                     // Note that after creating the item, we can access the body of the item with the Resource property off the ItemResponse. We can also access the RequestCharge property to see the amount of RUs consumed on this request.
                     Console.BackgroundColor = ConsoleColor.Black; 
@@ -226,7 +242,7 @@ namespace PropSearch
                 if(!ActivePropIDs.Contains(line.ListingID)) 
                 {
                     var partitionKeyValue = line.ListingID;
-                    ItemResponse<Property> DeleteProperty = await this.container.DeleteItemAsync<Property>(line.ListingID, new PartitionKey(partitionKeyValue));
+                    ItemResponse<Property> DeleteProperty = await this.cosmosContainer.DeleteItemAsync<Property>(line.ListingID, new PartitionKey(partitionKeyValue));
                     Console.WriteLine("Removed: {0},{1}\r",
                       line.ListingID,
                       line.AddressLine);
@@ -238,7 +254,7 @@ namespace PropSearch
         {
 
             QueryDefinition queryDefinition = new QueryDefinition(sqlQueryText);
-            FeedIterator<Property> queryResultSetIterator = this.container.GetItemQueryIterator<Property>(queryDefinition);
+            FeedIterator<Property> queryResultSetIterator = this.cosmosContainer.GetItemQueryIterator<Property>(queryDefinition);
 
             List<Property> Lines = new List<Property>();
 
@@ -362,11 +378,13 @@ namespace PropSearch
         public async Task ProcessInfo()
         {
             this.cosmosClient = new CosmosClient((string)parameters["EndpointUri"], (string)parameters["PrimaryKey"]);
-            this.container = this.cosmosClient.GetContainer((string)parameters["databaseId"], (string)parameters["containerId"]);
+            this.cosmosContainer = this.cosmosClient.GetContainer((string)parameters["databaseId"], (string)parameters["cosmosContainerId"]);
+            this.blobClient = new BlobClient((string)parameters["blobConnectionString"], (string)parameters["blobContainerName"], (string)parameters["blobName"]);
+            Console.WriteLine("Set clients");
             //await this.CreateDatabaseAsync();
             //await this.CreateContainerAsync();
-            await this.AddItemsToContainerAsync();
-            //await this.UpdateCityAsync();
+            await this.AddItemsToContainerAsync(this.blobClient);
+            //await this.UpdateCityAsync(this.blobClient);
             await this.CreateReportsAsync();
             //await this.DeleteItemAsync();
             Console.Read();
